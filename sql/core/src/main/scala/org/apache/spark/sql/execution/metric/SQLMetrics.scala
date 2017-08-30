@@ -23,6 +23,8 @@ import org.apache.spark.SparkContext
 import org.apache.spark.scheduler.AccumulableInfo
 import org.apache.spark.util.{AccumulatorContext, AccumulatorV2, Utils}
 
+import scala.collection.mutable.ArrayBuffer
+
 
 class SQLMetric(val metricType: String, initValue: Long = 0L) extends AccumulatorV2[Long, Long] {
   // This is a workaround for SPARK-11013.
@@ -53,6 +55,11 @@ class SQLMetric(val metricType: String, initValue: Long = 0L) extends Accumulato
   def +=(v: Long): Unit = _value += v
 
   override def value: Long = _value
+
+  def showMetricName: String = metadata.name match {
+    case Some(name) => name
+    case None => ""
+  }
 
   // Provide special identifier as metadata so we can tell that this is a `SQLMetric` later
   private[spark] override def toInfo(update: Option[Any], value: Option[Any]): AccumulableInfo = {
@@ -99,11 +106,28 @@ private[sql] object SQLMetrics {
    * A function that defines how we aggregate the final accumulator results among all tasks,
    * and represent it in string for a SQL physical operator.
    */
-  def stringValue(metricsType: String, values: Seq[Long]): String = {
+  def stringValue(metricsType: String, valuesInput: Seq[Any]): String = {
+
+    var valStr = ""
+
+    val values = valuesInput.map(valuesTmp => {
+      val vtmp = valuesInput.asInstanceOf[ArrayBuffer[String]].mkString("")
+      // scalastyle:off println
+      println(vtmp)
+      // scalastyle:off
+      if (vtmp.contains(":")) {
+        valStr = vtmp.split(":")(0)
+        vtmp.split(":")(1).toLong
+      } else {
+        vtmp.asInstanceOf[Long]
+      }
+    })
+
     if (metricsType == SUM_METRIC) {
+
       val numberFormat = NumberFormat.getInstance()
       numberFormat.setGroupingUsed(false)
-      numberFormat.format(values.sum)
+      numberFormat.format(values.sum) + valStr
     } else {
       val strFormat: Long => String = if (metricsType == SIZE_METRIC) {
         Utils.bytesToString
@@ -125,5 +149,33 @@ private[sql] object SQLMetrics {
       }
       s"\n$sum ($min, $med, $max)"
     }
+  }
+
+  def stringValue3(valuesInput: Seq[Any]): String = {
+    var valStr = ""
+    val values = valuesInput.map(valuesTmp => {
+      val vtmp = valuesInput.asInstanceOf[ArrayBuffer[String]].mkString("")
+      if (vtmp.contains(":")) {
+        valStr = vtmp.split(":")(0)
+        vtmp.split(":")(1).toLong
+      } else {
+        vtmp.toLong
+      }
+    })
+
+    val numberFormat = NumberFormat.getInstance()
+    //valStr + ": " + numberFormat.format(values.sum)
+
+    val validValues = values.filter(_ >= 0)
+    val Seq(sum, min, med, max) = {
+      val metric = if (validValues.isEmpty) {
+        Seq.fill(4)(0L)
+      } else {
+        val sorted = validValues.sorted
+        Seq(sorted.sum, sorted(0), sorted(validValues.length / 2), sorted(validValues.length - 1))
+      }
+      metric.map(numberFormat.format)
+    }
+    s"$valStr: $sum ($min, $med, $max)"
   }
 }

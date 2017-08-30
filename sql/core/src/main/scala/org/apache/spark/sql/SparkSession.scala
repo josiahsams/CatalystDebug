@@ -90,6 +90,9 @@ class SparkSession private(
    |  Session-related state  |
    * ----------------------- */
 
+  def getExecMetrics(executionId: Long): Map[Long, String] =
+    sharedState.listener.getExecutionMetrics(executionId)
+
   /**
    * State shared across sessions, including the [[SparkContext]], cached data, listener,
    * and a catalog that interacts with external systems.

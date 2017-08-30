@@ -17,9 +17,9 @@
 
 package org.apache.spark.sql.execution
 
-import org.apache.spark.{broadcast, TaskContext}
+import org.apache.spark.{SparkContext, TaskContext, broadcast}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.{InternalRow, UserTaskMetrics}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.codegen._
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
@@ -297,7 +297,16 @@ case class WholeStageCodegenExec(child: SparkPlan) extends UnaryExecNode with Co
 
   override private[sql] lazy val metrics = Map(
     "pipelineTime" -> SQLMetrics.createTimingMetric(sparkContext,
-      WholeStageCodegenExec.PIPELINE_DURATION_METRIC))
+      WholeStageCodegenExec.PIPELINE_DURATION_METRIC),
+    "userDefined1" -> SQLMetrics.createMetric(sparkContext,
+      "User Defined Sum Metrics 1"),
+    "userDefined2" -> SQLMetrics.createTimingMetric(sparkContext,
+      "User Defined Timing Metrics 2"),
+    "userDefined3" -> SQLMetrics.createSizeMetric(sparkContext,
+      "User Defined Size Metrics 3"),
+    "userDefined4" -> SQLMetrics.createSizeMetric(sparkContext,
+      "User Defined Size Metrics 4")
+  )
 
   /**
    * Generates code for this subtree.
@@ -306,6 +315,11 @@ case class WholeStageCodegenExec(child: SparkPlan) extends UnaryExecNode with Co
    */
   def doCodeGen(): (CodegenContext, CodeAndComment) = {
     val ctx = new CodegenContext
+    metricTerm(ctx, "userDefined1")
+    metricTerm(ctx, "userDefined2")
+    metricTerm(ctx, "userDefined3")
+    metricTerm(ctx, "userDefined4")
+    UserTaskMetrics.metricTerm(ctx, "userDefined1", "User Defined Sum Metrics 1")
     val code = child.asInstanceOf[CodegenSupport].produce(ctx, this)
     val source = s"""
       public Object generate(Object[] references) {
@@ -346,8 +360,18 @@ case class WholeStageCodegenExec(child: SparkPlan) extends UnaryExecNode with Co
   override def doExecute(): RDD[InternalRow] = {
     val (ctx, cleanedSource) = doCodeGen()
     // try to compile and fallback if it failed
+    var msg = sparkContext
+      .getLocalProperty(SparkContext.SPARK_JOB_DESCRIPTION).replaceAll(" ", "_")
     try {
-      CodeGenerator.compile(cleanedSource)
+      // child.sqlContext.sparkSession
+
+
+
+
+
+
+      CodeGenerator.compile(cleanedSource, msg)
+
     } catch {
       case e: Exception if !Utils.isTesting && sqlContext.conf.wholeStageFallback =>
         // We should already saw the error message
@@ -359,9 +383,14 @@ case class WholeStageCodegenExec(child: SparkPlan) extends UnaryExecNode with Co
     val durationMs = longMetric("pipelineTime")
 
     val rdds = child.asInstanceOf[CodegenSupport].inputRDDs()
+
     assert(rdds.size <= 2, "Up to two input RDDs can be supported")
     if (rdds.length == 1) {
       rdds.head.mapPartitionsWithIndex { (index, iter) =>
+
+        val stageID = if (TaskContext.get() != null) TaskContext.get().stageId() else "na"
+        msg += "_" + stageID
+
         val clazz = CodeGenerator.compile(cleanedSource)
         val buffer = clazz.generate(references).asInstanceOf[BufferedRowIterator]
         buffer.init(index, Array(iter))

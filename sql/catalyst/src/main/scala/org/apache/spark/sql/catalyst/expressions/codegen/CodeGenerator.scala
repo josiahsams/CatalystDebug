@@ -23,17 +23,17 @@ import java.util.{Map => JavaMap}
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
-
 import com.google.common.cache.{CacheBuilder, CacheLoader}
 import org.codehaus.janino.{ByteArrayClassLoader, ClassBodyEvaluator, SimpleCompiler}
 import org.codehaus.janino.util.ClassFile
-import scala.language.existentials
 
-import org.apache.spark.SparkEnv
+import scala.language.existentials
+import org.apache.spark.{SparkContext, SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.metrics.source.CodegenMetrics
-import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.{InternalRow, UserTaskMetric}
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection.newCodeGenContext
 import org.apache.spark.sql.catalyst.util.{ArrayData, MapData}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.Platform
@@ -813,12 +813,24 @@ abstract class CodeGenerator[InType <: AnyRef, OutType <: AnyRef] extends Loggin
   /** Binds an input expression to a given input schema */
   protected def bind(in: InType, inputSchema: Seq[Attribute]): InType
 
+
+
   /** Generates the requested evaluator binding the given expression(s) to the inputSchema. */
   def generate(expressions: InType, inputSchema: Seq[Attribute]): OutType =
     generate(bind(expressions, inputSchema))
 
+
+  /** Generates the requested evaluator binding the given expression(s) to the inputSchema. */
+  def generate(expressions: InType, inputSchema: Seq[Attribute],
+               ref: ArrayBuffer[Any]): OutType =
+    generate(bind(expressions, inputSchema), ref)
+
   /** Generates the requested evaluator given already bound expression(s). */
   def generate(expressions: InType): OutType = create(canonicalize(expressions))
+
+  /** Generates the requested evaluator given already bound expression(s). */
+  def generate(expressions: InType, ref: ArrayBuffer[Any]): OutType =
+    create(canonicalize(expressions))
 
   /**
    * Create a new codegen context for expression evaluator, used to store those
@@ -833,6 +845,14 @@ object CodeGenerator extends Logging {
   /**
    * Compile the Java source code into a Java class, using Janino.
    */
+  var message = "NotDefined"
+
+  def compile(code: CodeAndComment, message: String): GeneratedClass = {
+
+    this.message = message
+    cache.get(code)
+  }
+
   def compile(code: CodeAndComment): GeneratedClass = {
     cache.get(code)
   }
@@ -841,6 +861,19 @@ object CodeGenerator extends Logging {
    * Compile the Java source code into a Java class, using Janino.
    */
   private[this] def doCompile(code: CodeAndComment): GeneratedClass = {
+
+    val ctx = new CodegenContext
+    val codeBody = s"""
+                      |      Class test {
+                      |      public static void testIt() {
+                      |        System.out.println("Test IT");
+                      |      }
+                      |      }
+      """.stripMargin
+
+    val code1 = CodeFormatter.stripOverlappingComments(
+      new CodeAndComment(code.body +  codeBody, ctx.getPlaceHolderToComments()))
+
     val evaluator = new ClassBodyEvaluator()
 
     // A special classloader used to wrap the actual parent classloader of
@@ -867,11 +900,12 @@ object CodeGenerator extends Logging {
       classOf[MapData].getName,
       classOf[UnsafeMapData].getName,
       classOf[MutableRow].getName,
-      classOf[Expression].getName
+      classOf[Expression].getName,
+      classOf[UserTaskMetric].getName
     ))
     evaluator.setExtendedClass(classOf[GeneratedClass])
 
-    lazy val formatted = CodeFormatter.format(code)
+    lazy val formatted = CodeFormatter.format(code1)
 
     logDebug({
       // Only add extra debugging info to byte code when we are going to print the source code.
@@ -943,7 +977,10 @@ object CodeGenerator extends Logging {
           def timeMs: Double = (endTime - startTime).toDouble / 1000000
           CodegenMetrics.METRIC_SOURCE_CODE_SIZE.update(code.body.length)
           CodegenMetrics.METRIC_COMPILATION_TIME.update(timeMs.toLong)
-          logInfo(s"Code generated in $timeMs ms")
+
+
+
+          logInfo(s"Code generated in $timeMs ms $message")
           result
         }
       })

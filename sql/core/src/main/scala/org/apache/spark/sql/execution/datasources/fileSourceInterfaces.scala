@@ -19,23 +19,24 @@ package org.apache.spark.sql.execution.datasources
 
 import scala.collection.mutable
 import scala.util.Try
-
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs._
 import org.apache.hadoop.io.compress.{CompressionCodecFactory, SplittableCompressionCodec}
 import org.apache.hadoop.mapred.{FileInputFormat, JobConf}
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
-
 import org.apache.spark.annotation.Experimental
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql._
-import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
+import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow, UserTaskMetrics}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
+import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection.newCodeGenContext
 import org.apache.spark.sql.execution.FileRelation
 import org.apache.spark.sql.sources.{BaseRelation, DataSourceRegister, Filter}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.SerializableConfiguration
+
+import scala.collection.mutable.ArrayBuffer
 
 /**
  * ::Experimental::
@@ -260,6 +261,10 @@ trait FileFormat {
     val dataReader = buildReader(
       sparkSession, dataSchema, partitionSchema, requiredSchema, filters, options, hadoopConf)
 
+    val ctx = newCodeGenContext()
+    UserTaskMetrics.metricTerm(ctx, "juserDefined1", "User Defined Sum Metrics 1")
+    val ref = ctx.references
+
     new (PartitionedFile => Iterator[InternalRow]) with Serializable {
       private val fullSchema = requiredSchema.toAttributes ++ partitionSchema.toAttributes
 
@@ -267,7 +272,8 @@ trait FileFormat {
 
       // Using lazy val to avoid serialization
       private lazy val appendPartitionColumns =
-        GenerateUnsafeProjection.generate(fullSchema, fullSchema)
+        GenerateUnsafeProjection.generate(fullSchema, fullSchema,
+          ref)
 
       override def apply(file: PartitionedFile): Iterator[InternalRow] = {
         // Using local val to avoid per-row lazy val check (pre-mature optimization?...)

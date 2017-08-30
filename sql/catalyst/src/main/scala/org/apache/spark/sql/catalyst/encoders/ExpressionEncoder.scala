@@ -18,18 +18,20 @@
 package org.apache.spark.sql.catalyst.encoders
 
 import scala.reflect.ClassTag
-import scala.reflect.runtime.universe.{typeTag, TypeTag}
-
+import scala.reflect.runtime.universe.{TypeTag, typeTag}
 import org.apache.spark.sql.Encoder
-import org.apache.spark.sql.catalyst.{InternalRow, JavaTypeInference, ScalaReflection}
+import org.apache.spark.sql.catalyst.{InternalRow, JavaTypeInference, ScalaReflection, UserTaskMetrics}
 import org.apache.spark.sql.catalyst.analysis.{Analyzer, GetColumnByOrdinal, SimpleAnalyzer, UnresolvedAttribute, UnresolvedExtractValue}
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection.newCodeGenContext
 import org.apache.spark.sql.catalyst.expressions.codegen.{GenerateSafeProjection, GenerateUnsafeProjection}
 import org.apache.spark.sql.catalyst.expressions.objects.{AssertNotNull, Invoke, NewInstance}
 import org.apache.spark.sql.catalyst.optimizer.SimplifyCasts
 import org.apache.spark.sql.catalyst.plans.logical.{CatalystSerde, DeserializeToObject, LocalRelation}
 import org.apache.spark.sql.types.{BooleanType, ObjectType, StructField, StructType}
 import org.apache.spark.util.Utils
+
+import scala.collection.mutable
 
 /**
  * A factory for constructing encoders that convert objects and primitives to and from the
@@ -254,8 +256,16 @@ case class ExpressionEncoder[T](
   @transient
   private lazy val inputRow = new GenericMutableRow(1)
 
+  val references: mutable.ArrayBuffer[Any] = new mutable.ArrayBuffer[Any]()
+
+  references += UserTaskMetrics.createMetric("Safe User Defined Sum Metrics")
+
+//  val ctx = newCodeGenContext()
+//  UserTaskMetrics.metricTerm(ctx, "jusersafeDefined1", "Safe User Defined Sum Metrics 1")
+//  val ref = ctx.references
+
   @transient
-  private lazy val constructProjection = GenerateSafeProjection.generate(deserializer :: Nil)
+  private lazy val constructProjection = GenerateSafeProjection.generate(deserializer :: Nil, references)
 
   /**
    * Returns a new set (with unique ids) of [[NamedExpression]] that represent the serialized form

@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.catalyst.expressions.codegen
 
+import org.apache.spark.sql.catalyst.UserTaskMetrics
+import org.apache.spark.sql.catalyst.expressions.codegen.GenerateMutableProjection.newCodeGenContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, UnsafeRow}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.unsafe.Platform
@@ -155,16 +157,29 @@ object GenerateUnsafeRowJoiner extends CodeGenerator[(StructType, StructType), U
          """.stripMargin
       }
     }.mkString("\n")
+    val ctx = newCodeGenContext()
+    UserTaskMetrics.metricTerm(ctx, "userDefined1", "UnsafeRowJoiner User Defined Sum Metrics 1")
+    UserTaskMetrics.metricTerm(ctx, "userDefined2", "UnsafeRowJoiner User Defined Sum Metrics 2")
+    UserTaskMetrics.metricTerm(ctx, "userDefined3", "UnsafeRowJoiner User Defined Sum Metrics 3")
+    UserTaskMetrics.metricTerm(ctx, "userDefined4", "UnsafeRowJoiner User Defined Sum Metrics 4")
 
     // ------------------------ Finally, put everything together  --------------------------- //
     val codeBody = s"""
        |public java.lang.Object generate(Object[] references) {
-       |  return new SpecificUnsafeRowJoiner();
+       |  return new SpecificUnsafeRowJoiner(references);
        |}
        |
        |class SpecificUnsafeRowJoiner extends ${classOf[UnsafeRowJoiner].getName} {
+       |  private Object[] references;
+       |  ${ctx.declareMutableStates()}
+       |
        |  private byte[] buf = new byte[64];
        |  private UnsafeRow out = new UnsafeRow(${schema1.size + schema2.size});
+       |
+       |  public SpecificUnsafeRowJoiner(Object[] references) {
+       |    this.references = references;
+       |    ${ctx.initMutableStates()}
+       |  }
        |
        |  public UnsafeRow join(UnsafeRow row1, UnsafeRow row2) {
        |    // row1: ${schema1.size} fields, $bitset1Words words in bitset

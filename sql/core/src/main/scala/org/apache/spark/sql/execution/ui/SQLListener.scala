@@ -184,8 +184,14 @@ private[sql] class SQLListener(conf: SparkConf) extends SparkListener with Loggi
       stageAttemptID: Int,
       _accumulatorUpdates: Seq[AccumulableInfo],
       finishTask: Boolean): Unit = {
+
     val accumulatorUpdates =
-      _accumulatorUpdates.filter(_.update.isDefined).map(accum => (accum.id, accum.update.get))
+      _accumulatorUpdates.filter(_.update.isDefined).map(accum => {
+        (accum.id, accum.update.get, accum.name match {
+          case Some(name) => name
+          case None => ""
+        })
+      })
 
     _stageIdToStageMetrics.get(stageId) match {
       case Some(stageMetrics) =>
@@ -304,7 +310,7 @@ private[sql] class SQLListener(conf: SparkConf) extends SparkListener with Loggi
                stageMetrics <- _stageIdToStageMetrics.get(stageId).toIterable;
                taskMetrics <- stageMetrics.taskIdToMetricUpdates.values;
                accumulatorUpdate <- taskMetrics.accumulatorUpdates) yield {
-            (accumulatorUpdate._1, accumulatorUpdate._2)
+            (accumulatorUpdate._1, (accumulatorUpdate._3 + ":" + accumulatorUpdate._2).toString)
           }
         }.filter { case (id, _) => executionUIData.accumulatorMetrics.contains(id) }
 
@@ -323,7 +329,8 @@ private[sql] class SQLListener(conf: SparkConf) extends SparkListener with Loggi
     accumulatorUpdates.groupBy(_._1).map { case (accumulatorId, values) =>
       val metricType = metricTypeFunc(accumulatorId)
       accumulatorId ->
-        SQLMetrics.stringValue(metricType, values.map(_._2.asInstanceOf[Long]))
+        SQLMetrics.stringValue(metricType, values.map(_._2))
+
     }
   }
 
@@ -437,4 +444,4 @@ private[ui] class SQLStageMetrics(
 private[ui] class SQLTaskMetrics(
     val attemptId: Long, // TODO not used yet
     var finished: Boolean,
-    var accumulatorUpdates: Seq[(Long, Any)])
+    var accumulatorUpdates: Seq[(Long, Any, String)])

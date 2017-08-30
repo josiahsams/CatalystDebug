@@ -18,8 +18,9 @@
 package org.apache.spark.sql.execution
 
 import org.apache.spark.rdd.{PartitionwiseSampledRDD, RDD}
-import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.{InternalRow, UserTaskMetrics}
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection.newCodeGenContext
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, ExprCode, ExpressionCanonicalizer}
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.execution.metric.SQLMetrics
@@ -64,9 +65,15 @@ case class ProjectExec(projectList: Seq[NamedExpression], child: SparkPlan)
   }
 
   protected override def doExecute(): RDD[InternalRow] = {
+    val ctx = newCodeGenContext()
+    UserTaskMetrics.metricTerm(ctx, "userDefined1", "User Defined Sum Metrics 1")
+    UserTaskMetrics.metricTerm(ctx, "userDefined2", "User Defined Sum Metrics 2")
+    UserTaskMetrics.metricTerm(ctx, "userDefined3", "User Defined Sum Metrics 3")
+    UserTaskMetrics.metricTerm(ctx, "userDefined4", "User Defined Sum Metrics 4")
+
     child.execute().mapPartitionsInternal { iter =>
       val project = UnsafeProjection.create(projectList, child.output,
-        subexpressionEliminationEnabled)
+        subexpressionEliminationEnabled, ctx.references)
       iter.map(project)
     }
   }

@@ -356,7 +356,8 @@ private[spark] object JsonProtocol {
     ("Shuffle Write Metrics" -> shuffleWriteMetrics) ~
     ("Input Metrics" -> inputMetrics) ~
     ("Output Metrics" -> outputMetrics) ~
-    ("Updated Blocks" -> updatedBlocks)
+    ("Updated Blocks" -> updatedBlocks) ~
+    ("User Defined" -> taskMetrics.userDefinedMetrics)
   }
 
   def taskEndReasonToJson(taskEndReason: TaskEndReason): JValue = {

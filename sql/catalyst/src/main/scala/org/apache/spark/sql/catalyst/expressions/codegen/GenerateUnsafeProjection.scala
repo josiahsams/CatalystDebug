@@ -17,8 +17,13 @@
 
 package org.apache.spark.sql.catalyst.expressions.codegen
 
+import org.apache.spark.{SparkContext, SparkEnv}
+import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.catalyst.{UserTaskMetric, UserTaskMetrics}
+
+import scala.collection.mutable.ArrayBuffer
 
 /**
  * Generates a [[Projection]] that returns an [[UnsafeRow]].
@@ -346,23 +351,102 @@ object GenerateUnsafeProjection extends CodeGenerator[Seq[Expression], UnsafePro
   protected def bind(in: Seq[Expression], inputSchema: Seq[Attribute]): Seq[Expression] =
     in.map(BindReferences.bindReference(_, inputSchema))
 
+  override def generate(expressions: Seq[Expression]): UnsafeProjection = {
+    val ctx = newCodeGenContext()
+
+    TaskMetrics.registered.accumulators().foreach(x => println(x.metadata.name))
+
+    val accums = TaskMetrics.registered.accumulators().
+      filter(x => x.metadata.name.getOrElse("") == "test.userdefined")
+
+    accums.zipWithIndex.foreach{ case (acc, index) =>
+      ctx.addReferenceObj("juserDefined_" + index, acc )
+    }
+
+    SparkContext.getOrCreate(SparkEnv.get.conf).
+
+    //    ctx.addReferenceObj("ac1_juserDefined_",
+//      SparkContext.getOrCreate(SparkEnv.get.conf).longAccumulator("ac1") )
+
+//    UserTaskMetrics.metricTermWithRegister(ctx, "userDefined1", "User Defined Sum Metrics 1")
+
+    UserTaskMetrics.metricTerm(ctx, "userDefined1", "User Defined Sum Metrics 1")
+    UserTaskMetrics.metricTerm(ctx, "userDefined2", "User Defined Sum Metrics 2")
+    UserTaskMetrics.metricTerm(ctx, "userDefined3", "User Defined Sum Metrics 3")
+    UserTaskMetrics.metricTerm(ctx, "userDefined4", "User Defined Sum Metrics 4")
+
+    create(canonicalize(expressions), ctx.references)
+  }
+
+  override def generate(expressions: Seq[Expression],
+                        ref: ArrayBuffer[Any]): UnsafeProjection = {
+
+    ref.foreach(x => println(x.asInstanceOf[String]))
+
+    create(canonicalize(expressions), ref)
+  }
+
+
+
   def generate(
       expressions: Seq[Expression],
       subexpressionEliminationEnabled: Boolean): UnsafeProjection = {
     create(canonicalize(expressions), subexpressionEliminationEnabled)
   }
 
+  def generate(
+                expressions: Seq[Expression],
+                subexpressionEliminationEnabled: Boolean,
+                references: ArrayBuffer[Any]): UnsafeProjection = {
+    create(canonicalize(expressions), subexpressionEliminationEnabled, references)
+  }
+
   protected def create(references: Seq[Expression]): UnsafeProjection = {
     create(references, subexpressionEliminationEnabled = false)
   }
 
+  protected def create(references: Seq[Expression],
+                       ctxReferences: ArrayBuffer[Any]): UnsafeProjection = {
+    create(references, subexpressionEliminationEnabled = false, ctxReferences)
+  }
+
   private def create(
-      expressions: Seq[Expression],
-      subexpressionEliminationEnabled: Boolean): UnsafeProjection = {
+                      expressions: Seq[Expression],
+                      subexpressionEliminationEnabled: Boolean,
+                      references: ArrayBuffer[Any]): UnsafeProjection = {
     val ctx = newCodeGenContext()
+
+    UserTaskMetrics.addMetrics(ctx, references)
+
+//    references.zipWithIndex.foreach {
+//      case (obj, index) =>
+//        // println("ADDing Obj :: " + index)
+//      ctx.addReferenceObj("jusermetric_" + index, obj)
+//    }
+    // ctx.references ++= references
+    create(expressions, subexpressionEliminationEnabled, ctx)
+
+  }
+
+  private def create(
+                      expressions: Seq[Expression],
+                      subexpressionEliminationEnabled: Boolean): UnsafeProjection = {
+    val ctx = newCodeGenContext()
+    create(expressions, subexpressionEliminationEnabled, ctx)
+
+  }
+
+  private def create(
+                      expressions: Seq[Expression],
+                      subexpressionEliminationEnabled: Boolean,
+                      ctx: CodegenContext): UnsafeProjection = {
     val eval = createCode(ctx, expressions, subexpressionEliminationEnabled)
 
+    // println("ExecID Create: " + SparkEnv.get.executorId)
+
     val codeBody = s"""
+      import org.apache.spark.TaskContext;
+
       public java.lang.Object generate(Object[] references) {
         return new SpecificUnsafeProjection(references);
       }
@@ -376,6 +460,9 @@ object GenerateUnsafeProjection extends CodeGenerator[Seq[Expression], UnsafePro
         public SpecificUnsafeProjection(Object[] references) {
           this.references = references;
           ${ctx.initMutableStates()}
+          TaskContext taskContext = TaskContext.get();
+          // taskContext.registerAccumulator(${user1});
+          // ${user1}.add(10);
         }
 
         // Scala.Function1 need this
@@ -387,6 +474,12 @@ object GenerateUnsafeProjection extends CodeGenerator[Seq[Expression], UnsafePro
           ${eval.code.trim}
           return ${eval.value};
         }
+
+        @Override
+        protected void finalize() throws Throwable
+        {
+            System.out.println("From Finalize Method");
+        }
       }
       """
 
@@ -396,5 +489,9 @@ object GenerateUnsafeProjection extends CodeGenerator[Seq[Expression], UnsafePro
 
     val c = CodeGenerator.compile(code)
     c.generate(ctx.references.toArray).asInstanceOf[UnsafeProjection]
+
   }
+
+
+
 }

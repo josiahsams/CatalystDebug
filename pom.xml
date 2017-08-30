@@ -1905,13 +1905,13 @@
                 <goal>testCompile</goal>
               </goals>
             </execution>
-            <execution>
+            <!--execution>
               <id>attach-scaladocs</id>
               <phase>verify</phase>
               <goals>
                 <goal>doc-jar</goal>
               </goals>
-            </execution>
+            </execution-->
           </executions>
           <configuration>
             <scalaVersion>${scala.version}</scalaVersion>
@@ -2102,11 +2102,11 @@
             </filesets>
           </configuration>
         </plugin>
-        <plugin>
+        <!--plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-javadoc-plugin</artifactId>
           <version>2.10.3</version>
-        </plugin>
+        </plugin-->
         <plugin>
           <groupId>org.codehaus.mojo</groupId>
           <artifactId>exec-maven-plugin</artifactId>
@@ -2438,7 +2438,7 @@
       </modules>
     </profile>
 
-    <profile>
+    <!--profile>
       <id>doclint-java8-disable</id>
       <activation>
         <jdk>[1.8,)</jdk>
@@ -2455,7 +2455,7 @@
           </plugin>
         </plugins>
       </build>
-    </profile>
+    </profile-->
 
     <profile>
       <id>docker-integration-tests</id>

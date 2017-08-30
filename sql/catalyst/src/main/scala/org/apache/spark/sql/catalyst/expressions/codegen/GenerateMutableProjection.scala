@@ -17,6 +17,7 @@
 
 package org.apache.spark.sql.catalyst.expressions.codegen
 
+import org.apache.spark.sql.catalyst.UserTaskMetrics
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.NoOp
 
@@ -52,6 +53,11 @@ object GenerateMutableProjection extends CodeGenerator[Seq[Expression], MutableP
       expressions: Seq[Expression],
       useSubexprElimination: Boolean): MutableProjection = {
     val ctx = newCodeGenContext()
+    UserTaskMetrics.metricTerm(ctx, "userDefined1", "MutableProj User Defined Sum Metrics 1")
+    UserTaskMetrics.metricTerm(ctx, "userDefined2", "MutableProj User Defined Sum Metrics 2")
+    UserTaskMetrics.metricTerm(ctx, "userDefined3", "MutableProj User Defined Sum Metrics 3")
+    UserTaskMetrics.metricTerm(ctx, "userDefined4", "MutableProj User Defined Sum Metrics 4")
+
     val (validExpr, index) = expressions.zipWithIndex.filter {
       case (NoOp, _) => false
       case _ => true

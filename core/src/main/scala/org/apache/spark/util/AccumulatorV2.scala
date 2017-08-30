@@ -146,6 +146,8 @@ abstract class AccumulatorV2[IN, OUT] extends Serializable {
    */
   def value: OUT
 
+  def flipDriverSide: Unit = atDriverSide = if (atDriverSide) false else true
+
   // Called by Java when serializing an object
   final protected def writeReplace(): Any = {
     if (atDriverSide) {
@@ -153,9 +155,15 @@ abstract class AccumulatorV2[IN, OUT] extends Serializable {
         throw new UnsupportedOperationException(
           "Accumulator must be registered before send to executor")
       }
+
+      // scalastyle:off println
+      var eid = SparkContext.getOrCreate().env.executorId
+      println("Serialize " + System.identityHashCode(this) + " EID " + eid)
+      // scalastyle:on
       val copyAcc = copyAndReset()
       assert(copyAcc.isZero, "copyAndReset must return a zero value copy")
       copyAcc.metadata = metadata
+      println("Serialize Got " + System.identityHashCode(copyAcc))
       copyAcc
     } else {
       this
@@ -173,9 +181,24 @@ abstract class AccumulatorV2[IN, OUT] extends Serializable {
       // metrics, e.g. internal SQL metrics, which are per-operator.
       val taskContext = TaskContext.get()
       if (taskContext != null) {
+        this.metadata.name match {
+            // scalastyle:off println
+          case Some(x) => println("Register Accumulator : " + x + " :: "
+            + System.identityHashCode(this))
+            // scalastyle:on
+          case None => println("Register Accumulator : None " + System.identityHashCode(this))
+        }
         taskContext.registerAccumulator(this)
       }
     } else {
+      this.metadata.name match {
+        // scalastyle:off println
+        case Some(x) => println("Executor side Register Accumulator : " + x
+          + System.identityHashCode(this))
+        // scalastyle:on
+        case None => println("Executor side Register Accumulator : None "
+          + System.identityHashCode(this))
+      }
       atDriverSide = true
     }
   }

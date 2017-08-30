@@ -21,6 +21,8 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.codegen.{GenerateSafeProjection, GenerateUnsafeProjection}
 import org.apache.spark.sql.types.{DataType, StructType}
 
+import scala.collection.mutable.ArrayBuffer
+
 /**
  * A [[Projection]] that is calculated by calling the `eval` of each of the specified expressions.
  * @param expressions a sequence of expressions that determine the value of each column of the
@@ -132,6 +134,7 @@ object UnsafeProjection {
    * `inputSchema`.
    */
   def create(exprs: Seq[Expression], inputSchema: Seq[Attribute]): UnsafeProjection = {
+    Thread.dumpStack()
     create(exprs.map(BindReferences.bindReference(_, inputSchema)))
   }
 
@@ -149,6 +152,19 @@ object UnsafeProjection {
         case CreateNamedStruct(children) => CreateNamedStructUnsafe(children)
     })
     GenerateUnsafeProjection.generate(e, subexpressionEliminationEnabled)
+  }
+
+  def create(
+              exprs: Seq[Expression],
+              inputSchema: Seq[Attribute],
+              subexpressionEliminationEnabled: Boolean,
+              references: ArrayBuffer[Any]): UnsafeProjection = {
+    val e = exprs.map(BindReferences.bindReference(_, inputSchema))
+      .map(_ transform {
+        case CreateStruct(children) => CreateStructUnsafe(children)
+        case CreateNamedStruct(children) => CreateNamedStructUnsafe(children)
+      })
+    GenerateUnsafeProjection.generate(e, subexpressionEliminationEnabled, references)
   }
 }
 

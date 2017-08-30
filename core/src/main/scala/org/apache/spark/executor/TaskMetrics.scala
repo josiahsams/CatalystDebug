@@ -44,6 +44,8 @@ import org.apache.spark.util.{AccumulatorContext, AccumulatorMetadata, Accumulat
 class TaskMetrics private[spark] () extends Serializable {
   // Each metric is internally represented as an accumulator
   private val _executorDeserializeTime = new LongAccumulator
+  private val _userdefined = new LongAccumulator
+  _userdefined.add(1000)
   private val _executorRunTime = new LongAccumulator
   private val _resultSize = new LongAccumulator
   private val _jvmGCTime = new LongAccumulator
@@ -52,6 +54,8 @@ class TaskMetrics private[spark] () extends Serializable {
   private val _diskBytesSpilled = new LongAccumulator
   private val _peakExecutionMemory = new LongAccumulator
   private val _updatedBlockStatuses = new BlockStatusesAccumulator
+
+  def userDefinedMetrics: Long = _userdefined.sum
 
   /**
    * Time taken on the executor to deserialize this task.
@@ -200,7 +204,7 @@ class TaskMetrics private[spark] () extends Serializable {
     input.RECORDS_READ -> inputMetrics._recordsRead,
     output.BYTES_WRITTEN -> outputMetrics._bytesWritten,
     output.RECORDS_WRITTEN -> outputMetrics._recordsWritten
-  ) ++ testAccum.map(TEST_ACCUM -> _)
+  ) ++ testAccum.map(TEST_ACCUM -> _) // ++ nameToUserDefAccums
 
   @transient private[spark] lazy val internalAccums: Seq[AccumulatorV2[_, _]] =
     nameToAccums.values.toIndexedSeq
@@ -209,9 +213,21 @@ class TaskMetrics private[spark] () extends Serializable {
    |        OTHER THINGS        |
    * ========================== */
 
+  @transient private[spark] lazy val nameToUserDefAccums = LinkedHashMap(
+    "test.userdefined" -> _userdefined)
+
+  @transient private[spark] lazy val userDefAccums: Seq[AccumulatorV2[_, _]] =
+    nameToUserDefAccums.values.toIndexedSeq
+
   private[spark] def register(sc: SparkContext): Unit = {
     nameToAccums.foreach {
       case (name, acc) => acc.register(sc, name = Some(name), countFailedValues = true)
+    }
+    nameToUserDefAccums.foreach{
+      case (name, acc) =>
+        acc.register(sc, name = Some(name), countFailedValues = true)
+        externalAccums += acc
+        // registerAccumulator(acc)
     }
   }
 
@@ -220,11 +236,13 @@ class TaskMetrics private[spark] () extends Serializable {
    */
   @transient private[spark] lazy val externalAccums = new ArrayBuffer[AccumulatorV2[_, _]]
 
+
   private[spark] def registerAccumulator(a: AccumulatorV2[_, _]): Unit = {
     externalAccums += a
   }
 
-  private[spark] def accumulators(): Seq[AccumulatorV2[_, _]] = internalAccums ++ externalAccums
+  private[spark] def accumulators(): Seq[AccumulatorV2[_, _]] =
+    internalAccums ++ externalAccums ++ nameToUserDefAccums.values
 }
 
 
@@ -239,12 +257,17 @@ private[spark] object TaskMetrics extends Logging {
     tm.nameToAccums.foreach { case (name, acc) =>
       acc.metadata = AccumulatorMetadata(AccumulatorContext.newId(), Some(name), true)
     }
+    tm.nameToUserDefAccums.foreach { case (name, acc) =>
+      acc.metadata = AccumulatorMetadata(AccumulatorContext.newId(), Some(name), true)
+    }
     tm
   }
 
   def registered: TaskMetrics = {
     val tm = empty
     tm.internalAccums.foreach(AccumulatorContext.register)
+    tm.userDefAccums.foreach(AccumulatorContext.register)
+    tm.externalAccums ++= tm.userDefAccums
     tm
   }
 
@@ -274,12 +297,18 @@ private[spark] object TaskMetrics extends Logging {
    */
   def fromAccumulators(accums: Seq[AccumulatorV2[_, _]]): TaskMetrics = {
     val tm = new TaskMetrics
+    tm.nameToAccums.foreach(x => println(x._1) )
     val (internalAccums, externalAccums) =
-      accums.partition(a => a.name.isDefined && tm.nameToAccums.contains(a.name.get))
+      accums.partition(a => {
+        println("partition " + a.name.getOrElse("NULL ") + " cond " + tm.nameToAccums.contains(a.name.get))
+        a.name.isDefined && tm.nameToAccums.contains(a.name.get)})
 
+    internalAccums.foreach(x => println("INTERNAL : " + x.metadata.name ))
+    externalAccums.foreach(x => println("EXTERNAL : " + x.metadata.name ))
     internalAccums.foreach { acc =>
       val tmAcc = tm.nameToAccums(acc.name.get).asInstanceOf[AccumulatorV2[Any, Any]]
       tmAcc.metadata = acc.metadata
+        println("fromAccumulators :: " + acc.metadata.name.getOrElse("NULL"))
       tmAcc.merge(acc.asInstanceOf[AccumulatorV2[Any, Any]])
     }
 

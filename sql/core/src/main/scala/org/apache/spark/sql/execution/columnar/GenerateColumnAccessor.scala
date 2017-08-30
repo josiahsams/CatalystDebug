@@ -18,7 +18,7 @@
 package org.apache.spark.sql.execution.columnar
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.{InternalRow, UserTaskMetrics}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodeAndComment, CodeFormatter, CodeGenerator, UnsafeRowWriter}
 import org.apache.spark.sql.types._
@@ -67,6 +67,11 @@ object GenerateColumnAccessor extends CodeGenerator[Seq[DataType], ColumnarItera
 
   protected def create(columnTypes: Seq[DataType]): ColumnarIterator = {
     val ctx = newCodeGenContext()
+    UserTaskMetrics.metricTerm(ctx, "userDefined1", "ColAccessor User Defined Sum Metrics 1")
+    UserTaskMetrics.metricTerm(ctx, "userDefined2", "ColAccessor User Defined Sum Metrics 2")
+    UserTaskMetrics.metricTerm(ctx, "userDefined3", "ColAccessor User Defined Sum Metrics 3")
+    UserTaskMetrics.metricTerm(ctx, "userDefined4", "ColAccessor User Defined Sum Metrics 4")
+
     val numFields = columnTypes.size
     val (initializeAccessors, extractors) = columnTypes.zipWithIndex.map { case (dt, index) =>
       val accessorName = ctx.freshName("accessor")

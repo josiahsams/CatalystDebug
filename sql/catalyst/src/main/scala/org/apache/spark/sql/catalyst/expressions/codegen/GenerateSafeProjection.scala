@@ -17,12 +17,15 @@
 
 package org.apache.spark.sql.catalyst.expressions.codegen
 
+import org.apache.spark.sql.catalyst.UserTaskMetrics
+import scala.collection.mutable.ArrayBuffer
 import scala.annotation.tailrec
-
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.NoOp
 import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, GenericArrayData}
 import org.apache.spark.sql.types._
+
+
 
 /**
  * Java can not access Projection (in package object)
@@ -137,8 +140,32 @@ object GenerateSafeProjection extends CodeGenerator[Seq[Expression], Projection]
     case _ => ExprCode("", "false", input)
   }
 
+  override def generate(
+                expressions: Seq[Expression],
+                references: ArrayBuffer[Any]): Projection = {
+    create(canonicalize(expressions), references)
+  }
+
+  protected def create(expressions: Seq[Expression], ref: ArrayBuffer[Any]): Projection = {
+    val ctx = newCodeGenContext()
+
+    UserTaskMetrics.addMetrics(ctx, ref)
+
+    create(expressions, ctx)
+  }
+
   protected def create(expressions: Seq[Expression]): Projection = {
     val ctx = newCodeGenContext()
+    create(expressions, ctx)
+  }
+
+  protected def create(expressions: Seq[Expression], ctx: CodegenContext): Projection = {
+
+//    UserTaskMetrics.metricTerm(ctx, "userDefined1", "SafeProj User Defined Sum Metrics 1")
+//    UserTaskMetrics.metricTerm(ctx, "userDefined2", "SafeProj User Defined Sum Metrics 2")
+//    UserTaskMetrics.metricTerm(ctx, "userDefined3", "SafeProj User Defined Sum Metrics 3")
+//    UserTaskMetrics.metricTerm(ctx, "userDefined4", "SafeProj User Defined Sum Metrics 4")
+
     val expressionCodes = expressions.zipWithIndex.map {
       case (NoOp, _) => ""
       case (e, i) =>
